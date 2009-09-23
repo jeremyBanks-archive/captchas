@@ -1,2 +1,4 @@
 *.pyc
-image.gif
+*.gif
+*.png
+

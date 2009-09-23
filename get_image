@@ -1,2 +1,0 @@
-#!/bin/sh
-wget -O image.gif http://gizmosms.com/verify_image.php

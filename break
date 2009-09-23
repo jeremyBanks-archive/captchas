@@ -1,0 +1,77 @@
+#!/usr/bin/env python2.5
+import sys
+import Image
+import ImageFilter as IF
+import ImageEnhance as IE
+
+image = Image.open("image.gif").convert("RGB")
+
+maxed = image.filter(IF.MaxFilter(3))
+
+contrastor = IE.Contrast(maxed)
+
+contrasted = contrastor.enhance(3)
+
+width, height = contrasted.size
+
+image = contrasted.crop((8, 16, width - 8, height - 16))
+image.save("_.png")
+image = Image.open("_.png")
+data = image.load()
+
+for y in range(image.size[1]):
+    for x in range(image.size[0]):
+        if all(d == 255 for d in data[x, y]):
+            data[x, y] = (255, 255, 255)
+        else:
+            data[x, y] = (0, 0, 0)
+
+width, height = image.size
+
+W = (255, 255, 255)
+
+cuts = []
+
+for x in range(image.size[0]):
+    if all(data[x, y] == W for y in range(height)):
+        for y in range(height):
+            data[x, y] = (255, 128, 128)
+        if cuts and cuts[-1][1] == x - 1:
+            cuts[-1][1] = x
+        else:
+            cuts.append([x, x])
+
+
+
+chunks = []
+
+r = list(reversed([-1] + reduce(lambda a, b: a + b, cuts) + [width + 1 - 1]))
+
+while r:
+    chunks.append((r.pop() + 1, r.pop() - 1))
+
+areas = []
+
+for chunk in chunks:
+    top = 0
+    bottom = None
+
+    for y in range(image.size[1]):
+        if all(data[x, y] == W for x in range(chunk[0], chunk[1] + 1)):
+            if top >= y - 1:
+                top = y
+            else:
+                if bottom is None:
+                    bottom = y
+            for x in range(chunk[0], chunk[1] + 1):
+                data[x, y] = (128, 128, 255)
+
+    if chunk[1] > chunk[0]:
+        areas.append((chunk[0], top, chunk[1], bottom))
+
+digits = [  ]
+
+image.save("test.png")
+data = image.load()
+
+
