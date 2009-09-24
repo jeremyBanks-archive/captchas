@@ -23,12 +23,8 @@ class Captcha(object):
         self.characters = [] # filled in mask_crap_and_find_characters
         
         self.mask_background()
-        self.mask_horizontal_lines()
+        self.mask_horizontal_lines()        
         self.mask_crap_and_find_characters()
-        # ^ and v should be done at once, so we don't have to chunk the image twice.
-        
-        for c in self.characters:
-            c.show()
         
         self.align_characters()
         
@@ -44,7 +40,7 @@ class Captcha(object):
             if self[index] == background:
                 self[index] = None
 
-    MIN_LINE_LENGTH = 3
+    MIN_LINE_LENGTH = 8
     
     def mask_horizontal_lines(self):
         """Masks monocolored horizontal lines at least MIN_LINE_LENGTH in length in the image.
@@ -131,10 +127,10 @@ class Captcha(object):
                 for index in chunk:
                     self[index] = None
             else:
-                self.characters.append(self.chunk_image(chunk))
+                self.characters.append(self.chunk_image_mask(chunk))
 
-    def chunk_image(self, chunk, ignore_color=False):
-        """Returns an image of the pixels in a chunk, cropped to fit.
+    def chunk_image_mask(self, chunk, ignore_color=False):
+        """Returns a B&W image of the pixels in a chunk, cropped to fit.
 
         The pixels that fit into the crop but are not in the chunk are
         masked, but their colour values are preserved."""
@@ -156,17 +152,17 @@ class Captcha(object):
             if max_y is None or y > max_y:
                 max_y = y
 
-        image = Image.prep(self.image.crop((min_x, min_y, max_x, max_y)).convert("RGBA"))
-
+        image = Image.prep(Image.new("1", (max_x - min_x + 1,
+                                           max_y - min_y + 1)))
+        
         for x in range(image.width):
             for y in range(image.height):
-                if (min_x + x, min_y + y) not in chunk:
-                    r, g, b, a = image.data[x, y]
-                    image.data[x, y] = r, g, b, False
-
-        return(image)
+                image.data[x, y] = (min_x + x, min_y + y) in chunk
         
-    MAX__ROTATION = .25
+        return(image)
+
+    MIN_ROTATION = -120
+    MAX_ROTATION = +120
     
     def align_characters(self):
         """Rotates character images to the correct alignment.
@@ -174,6 +170,63 @@ class Captcha(object):
         This is determined by finding the orientation within MAX_ROTATION
         rotations with the minimum area that produces an image taller than
         it is wide."""
+
+        new_characters = []
+        
+        for character in self.characters:
+            best_width = None
+            best_area = None
+            
+            for angle in range(self.MIN_ROTATION, self.MAX_ROTATION + 1):
+                rotated = Image.prep(character.rotate(angle, Image.NEAREST,
+                                                      expand=True))
+
+                min_x = 0
+                max_x = rotated.width - 1
+                min_y = 0
+                max_y = rotated.height - 1
+                
+                for x in range(rotated.width):
+                    if any(rotated.data[x, y] for y in range(rotated.height)):
+                        break
+                    else:
+                        min_x = x
+
+                for _x in range(rotated.width):
+                    x = rotated.width - 1 - _x
+                    
+                    if any(rotated.data[x, y] for y in range(rotated.height)):
+                        break
+                    else:
+                        max_x = x
+
+                for y in range(rotated.height):
+                    if any(rotated.data[x, y] for x in range(rotated.width)):
+                        break
+                    else:
+                        min_y = y
+
+                for _y in range(rotated.height):
+                    y = rotated.height - 1 - _y
+                    
+                    if any(rotated.data[x, y] for x in range(rotated.width)):
+                        break
+                    else:
+                        max_y = y
+
+                width = max_x - min_x + 1
+                height = max_y - min_y + 1
+
+                area = width * height
+                
+                if best_area is None or (area < best_area and width < height):
+                    best_area = area
+                    best_image = rotated
+                    best_box = (min_x, min_y, max_x, max_y)
+
+            new_characters.append(Image.prep(best_image.crop(best_box)))
+
+        self.characters = new_characters
 
     def interpret_characters(self):
         """Attempts to return the string of characters represented by the character images."""
