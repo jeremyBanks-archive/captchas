@@ -4,12 +4,13 @@ from __future__ import unicode_literals, print_function, absolute_import, divisi
 from copy import *
 import Image # We'll add .prep and .show to this.
 import ImageChops
-import ImageEnhance
+import ImageFilter
 import ImageStat
 import collections
 import functools
 import os.path
 import random
+import subprocess
 import sys
 import tempfile
 import webbrowser
@@ -228,10 +229,37 @@ class Captcha(object):
 
         self.characters = new_characters
 
+    CHARACTER_PADDING = 16
+    
     def interpret_characters(self):
         """Attempts to return the string of characters represented by the character images."""
 
-        return("NO IDEA") # good fucking luck.
+        width = (sum(i.width for i in self.characters) +
+                 self.CHARACTER_PADDING * (len(self.characters) + 1))
+        height = (max(i.height for i in self.characters) +
+                  self.CHARACTER_PADDING * 2)
+
+        image = Image.prep(Image.new("L", (width, height), 0))
+
+        x_offset = self.CHARACTER_PADDING
+        
+        for character in self.characters:
+            image.paste(character, (x_offset, self.CHARACTER_PADDING,
+                                    x_offset + character.width,
+                                    self.CHARACTER_PADDING + character.height))
+            
+            x_offset += character.width + self.CHARACTER_PADDING
+
+        image = Image.prep(image.filter(ImageFilter.MaxFilter(3)))
+        
+        f = tempfile.NamedTemporaryFile(suffix=".ppm", delete=False)
+
+        image.save(f.name)
+        
+        result = trim(subprocess.Popen(["ocrad", "-i", f.name],
+                                       stdout=subprocess.PIPE).communicate()[0])
+        
+        return(result)
 
     @property
     def masked(self):
