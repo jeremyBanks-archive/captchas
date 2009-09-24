@@ -20,14 +20,13 @@ class Captcha(object):
     def __init__(self, file_):
         self.image = Image.prep(Image.open(file_).convert("RGB"))
         self.mask = Image.prep(Image.new("1", self.dimensions, False))
+        self.characters = [] # filled in mask_crap_and_find_characters
         
         self.mask_background()
         self.mask_horizontal_lines()
-        self.mask_small_chunks()
+        self.mask_crap_and_find_characters()
+        # ^ and v should be done at once, so we don't have to chunk the image twice.
         
-        self.characters = [self.chunk_image(chunk) for chunk in
-                           self.all_chunks(ignore_color=True)]
-
         for c in self.characters:
             c.show()
         
@@ -124,13 +123,15 @@ class Captcha(object):
     
     MIN_CHUNK_AREA = 128
 
-    def mask_small_chunks(self):
+    def mask_crap_and_find_characters(self):
         """Masks all monocolored chunks in the image with an area less than MIN_CHUNK_AREA."""
 
         for chunk in self.all_chunks():
             if len(chunk) < self.MIN_CHUNK_AREA:
                 for index in chunk:
                     self[index] = None
+            else:
+                self.characters.append(self.chunk_image(chunk))
 
     def chunk_image(self, chunk, ignore_color=False):
         """Returns an image of the pixels in a chunk, cropped to fit.
@@ -159,7 +160,7 @@ class Captcha(object):
 
         for x in range(image.width):
             for y in range(image.height):
-                if self[min_x + x, min_y + y] is None:
+                if (min_x + x, min_y + y) not in chunk:
                     r, g, b, a = image.data[x, y]
                     image.data[x, y] = r, g, b, False
 
