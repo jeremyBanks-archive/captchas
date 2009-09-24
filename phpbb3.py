@@ -74,14 +74,92 @@ def prep(image):
     image.data = image.load()
     image.width, image.height = image.size
     image.show = functools.partial(image_show, image)
-    image.sub = functools.partial(image_sub, image)
-    image.flood = functools.partial(image_flood, image)
+    image.sub = functools.partial(image_sub, image) # TODO: NUKE
+    image.flood = functools.partial(image_flood, image) # TODO: NUKE
     
     return(image)
 
 # TODO: Use a mask on the original image instead of modifying all
 # of these coppies, and modularize this shit.
 # Also, throw __iter__, __getitem__ and __setitem__ on preppeds.
+
+class Captcha(object):
+    def __init__(self, file_):
+        self.image = prep(Image.open(file_))
+        self.mask = prep(Image.new("1", self.dimensions, 0))
+
+        self.mask_background()
+        self.mask_horzontal_lines()
+        self.mask_small_chunks()
+        
+        self.character_images = self.chunk_images()
+
+    def mask_background(self):
+        pass
+
+    def mask_horizontal_lines(self):
+        pass
+
+    def mask_small_chunks(self):
+        pass
+
+    def chunk_images(self):
+        pass
+    
+    def __getitem__(self, x_y):
+        """Returns the value (or None if masked) of a pixel in the image."""
+        
+        x, y = x_y
+        
+        if self.mask[x, y] == 0:
+            return(self.original[x, y])
+        else:
+            return(None)
+
+    def __setitem__(self, x_y, value):
+        """Sets the value (or mask if None) of a pixel in the image."""
+        
+        x, y = x_y
+
+        if value is None:
+            self.mask.data[x, y] = 1
+        else:
+            self.mask.data[x, y] = 0
+            self.image.data[x, y] = value
+
+    def __iter__(self):
+        """Iterates the coords of each pixels in the image."""
+        
+        for y in range(self.height):
+            for x in range(self.width):
+                yield(x, y)
+
+    @property
+    def masked(self):
+        """Returns an RGBA image based on original with masked areas transparent.
+
+        They keep their original color values, their alpha is just zeroed."""
+
+        image = prep(self.image.convert("RGBA"))
+
+        for index in self:
+            if self[index] is None:
+                r, g, b, a = image[index]
+                image[index] = r, g, b, 0
+
+        return(image)
+    
+    @property
+    def dimensions(self):
+        return(self.image.dimensions)
+
+    @property
+    def width(self):
+        return(self.dimensions[0])
+
+    @property
+    def height(self):
+        return(self.dimensions[1])
 
 def read_captcha(filename):
     original = Image.open(filename)
