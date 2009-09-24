@@ -87,7 +87,7 @@ def read_captcha(filename):
     original = Image.open(filename)
     background = tuple(ImageStat(original).median)
 
-    # First we'll remove the horizontal lines in the background.
+    # Remove the horizontal lines in the background.
     
     lines_gone = prep(ImageChops.duplicate(original))
 
@@ -99,15 +99,15 @@ def read_captcha(filename):
 
     horizontal_lines = list()
     
-    for y in range(1, lines_gone.height - 1):
+    for y in range(lines_gone.height):
         start = None
         end = None
         color = None
 
         for x in range(lines_gone.width): # Why aren't ints iterable?
             if (lines_gone.data[x, y] != background and
-                lines_gone.data[x, y - 1] == background and
-                lines_gone.data[x, y + 1] == background):
+                (y == 0 or lines_gone.data[x, y - 1] == background) and
+                (y == lines_gone.height - 1 or lines_gone.data[x, y + 1] == background)):
                 
                 if start is None:
                     start = end = x
@@ -130,7 +130,7 @@ def read_captcha(filename):
         for x in range(start, end + 1):
             lines_gone.data[x, y] = background
 
-    MAX_FILL_AREA = 64
+    MAX_FILL_AREA = 128
     
     # Next we'll eliminate anything too small to be a letter.
     # We do this my looking for any "fill" areas of a given
