@@ -1,169 +1,26 @@
 #!/usr/bin/env python2.6
 from __future__ import unicode_literals, print_function, absolute_import, division
-import sys
 import Image
 import ImageChops
 import ImageEnhance
-from ImageStat import Stat as ImageStat
-import webbrowser
-import os.path
-import tempfile
+import ImageStat
 import functools
-
-BLACK = (  0,   0,   0)
-WHITE = (255, 255, 255)
+import os.path
+import sys
+import tempfile
+import webbrowser
 
 def image_show(image):
+    """Saves an image to a temporary file and opens it in a web browser."""
+    
     f = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     image.save(f)
     webbrowser.open("file://" + os.path.abspath(f.name))
 
-def image_sub(image, original, replacement):
-    for x in range(image.width):
-        for y in range(image.height):
-            if image.data[x, y] == original:
-                image.data[x, y] = replacement
-
-def image_flood(image, x, y, color, dry=False):
-    "Floods an image and returns affected pixels. Doesn't affect original if dry is set."
-
-    if dry:
-        image = prep(ImageChops.duplicate(image))
-
-    original_color = image.data[x, y]
-    width, height = image.size
-        
-    def flood(x, y):
-        affected = 1
-        
-        image.data[x, y] = color
-
-        if 1 <= x and image.data[x - 1, y] == original_color:
-            affected += flood(x - 1, y)
-            
-        if x + 1 < width and image.data[x + 1, y] == original_color:
-            affected += flood(x + 1, y)
-            
-        if 1 <= y and image.data[x, y - 1] == original_color:
-            affected += flood(x, y - 1)
-            
-        if y + 1 < height and image.data[x, y + 1] == original_color:
-            affected += flood(x, y + 1)
-
-        # Diagonals too!
-
-        if 1 <= x and 1 <= y and image.data[x - 1, y - 1] == original_color:
-            affected += flood(x - 1, y - 1)
-            
-        if x + 1 < width and 1 <= y and image.data[x + 1, y - 1] == original_color:
-            affected += flood(x + 1, y - 1)
-
-        if 1 <= x and y + 1 < height and image.data[x - 1, y + 1] == original_color:
-            affected += flood(x - 1, y + 1)
-            
-        if x + 1 < width and y + 1 < height and image.data[x + 1, y + 1] == original_color:
-            affected += flood(x + 1, y + 1)
-
-        return(affected)
-
-    affected = flood(x, y)
-    
-    return(affected)
-
-def prep(image):
-    image.data = image.load()
-    image.width, image.height = image.size
-    image.show = functools.partial(image_show, image)
-    image.sub = functools.partial(image_sub, image) # TODO: NUKE
-    image.flood = functools.partial(image_flood, image) # TODO: NUKE
-    
-    return(image)
-
-# TODO: Use a mask on the original image instead of modifying all
-# of these coppies, and modularize this shit.
-# Also, throw __iter__, __getitem__ and __setitem__ on preppeds.
-
-class Captcha(object):
-    def __init__(self, file_):
-        self.image = prep(Image.open(file_))
-        self.mask = prep(Image.new("1", self.dimensions, 0))
-
-        self.mask_background()
-        self.mask_horzontal_lines()
-        self.mask_small_chunks()
-        
-        self.character_images = self.chunk_images()
-
-    def mask_background(self):
-        pass
-
-    def mask_horizontal_lines(self):
-        pass
-
-    def mask_small_chunks(self):
-        pass
-
-    def chunk_images(self):
-        pass
-    
-    def __getitem__(self, x_y):
-        """Returns the value (or None if masked) of a pixel in the image."""
-        
-        x, y = x_y
-        
-        if self.mask[x, y] == 0:
-            return(self.original[x, y])
-        else:
-            return(None)
-
-    def __setitem__(self, x_y, value):
-        """Sets the value (or mask if None) of a pixel in the image."""
-        
-        x, y = x_y
-
-        if value is None:
-            self.mask.data[x, y] = 1
-        else:
-            self.mask.data[x, y] = 0
-            self.image.data[x, y] = value
-
-    def __iter__(self):
-        """Iterates the coords of each pixels in the image."""
-        
-        for y in range(self.height):
-            for x in range(self.width):
-                yield(x, y)
-
-    @property
-    def masked(self):
-        """Returns an RGBA image based on original with masked areas transparent.
-
-        They keep their original color values, their alpha is just zeroed."""
-
-        image = prep(self.image.convert("RGBA"))
-
-        for index in self:
-            if self[index] is None:
-                r, g, b, a = image[index]
-                image[index] = r, g, b, 0
-
-        return(image)
-    
-    @property
-    def dimensions(self):
-        return(self.image.dimensions)
-
-    @property
-    def width(self):
-        return(self.dimensions[0])
-
-    @property
-    def height(self):
-        return(self.dimensions[1])
 
 def read_captcha(filename):
     original = Image.open(filename)
-    background = tuple(ImageStat(original).median)
+    background = tuple(ImageStat.Stat(original).median)
 
     # Remove the horizontal lines in the background.
     
@@ -232,14 +89,178 @@ def read_captcha(filename):
     
     discolored.show()
 
+def image_flood(image, x, y, color, dry=False):
+    "Floods an image and returns affected pixels. Doesn't affect original if dry is set."
+
+    if dry:
+        image = prep(ImageChops.duplicate(image))
+
+    original_color = image.data[x, y]
+    width, height = image.size
+        
+    def flood(x, y):
+        affected = 1
+        
+        image.data[x, y] = color
+
+        if 1 <= x and image.data[x - 1, y] == original_color:
+            affected += flood(x - 1, y)
+            
+        if x + 1 < width and image.data[x + 1, y] == original_color:
+            affected += flood(x + 1, y)
+            
+        if 1 <= y and image.data[x, y - 1] == original_color:
+            affected += flood(x, y - 1)
+            
+        if y + 1 < height and image.data[x, y + 1] == original_color:
+            affected += flood(x, y + 1)
+
+        # Diagonals too!
+
+        if 1 <= x and 1 <= y and image.data[x - 1, y - 1] == original_color:
+            affected += flood(x - 1, y - 1)
+            
+        if x + 1 < width and 1 <= y and image.data[x + 1, y - 1] == original_color:
+            affected += flood(x + 1, y - 1)
+
+        if 1 <= x and y + 1 < height and image.data[x - 1, y + 1] == original_color:
+            affected += flood(x - 1, y + 1)
+            
+        if x + 1 < width and y + 1 < height and image.data[x + 1, y + 1] == original_color:
+            affected += flood(x + 1, y + 1)
+
+        return(affected)
+
+    affected = flood(x, y)
+    
+    return(affected)
+
+def prep(image):
+    """Makes an image object slightly nicer to work with.
+
+    - Loads the image and put the access object in .data.
+    - Sets .width and .height from .size.
+    - Adds a .show() that should work anywhere."""
+    
+    image.data = image.load()
+    image.width, image.height = image.size
+    image.show = functools.partial(image_show, image)
+    
+    return(image)
+
+class Captcha(object):
+    """Throw this an image file containing a CATCHPA and it'll put it's best guess in .value."""
+    
+    def __init__(self, file_):
+        self.image = prep(Image.open(file_).convert("RGB"))
+        self.mask = prep(Image.new("1", self.dimensions, 0))
+
+        self.mask_background()
+        self.mask_horzontal_lines()
+        self.mask_small_chunks()
+        
+        self.characters = self.chunk_images()
+        self.align_characters()
+
+        self.value = self.interpret_characters()
+
+    def mask_background(self):
+        """Masks all pixels with the median pixel value in the image."""
+
+    MIN_LINE_LENGTH = 3
+    
+    def mask_horizontal_lines(self):
+        """Masks monocolored horizontal lines at least MIN_LINE_LENGTH in length in the image.
+
+        Lines to be masked must have masked pixels or edges above and below them."""
+
+    MIN_CHUNK_AREA = 128
+    
+    def mask_small_chunks(self):
+        """Masks all monocolored chunks of the image with an area less than MIN_CHUNK_AREA."""
+
+    def chunk_images(self):
+        """Return an iterable of images of each unmasked chunk in the image.
+
+        Rembember that this ignores color information and acts only based on masks."""
+
+    MAX__ROTATION = .25
+    
+    def align_characters(self):
+        """Rotates character images to the correct alignment.
+
+        This is determined by finding the orientation within MAX_ROTATION
+        rotations with the minimum area that produces an image taller than
+        it is wide."""
+
+    def interpret_characters(self):
+        """Attempts to return the string of characters represented by the character images."""
+
+        return("NO IDEA") # good fucking luck.
+    
+    def __getitem__(self, x_y):
+        """Returns the value (or None if masked or out of bounds) of a pixel in the image."""
+        
+        x, y = x_y
+        
+        if 0 <= x < self.width and 0 <= y < self.height and self.mask[x, y] == 0:
+            return(self.original[x, y])
+        else:
+            return(None)
+
+    def __setitem__(self, x_y, value):
+        """Sets the value (or mask if None) of a pixel in the image."""
+        
+        x, y = x_y
+
+        if value is None:
+            self.mask.data[x, y] = 1
+        else:
+            self.mask.data[x, y] = 0
+            self.image.data[x, y] = value
+
+    def __iter__(self):
+        """Iterates the coords of each pixels in the image."""
+        
+        for y in range(self.height):
+            for x in range(self.width):
+                yield(x, y)
+
+    @property
+    def masked(self):
+        """Returns an RGBA image based on original with masked areas transparent.
+
+        They keep their original color values, their alpha is just zeroed."""
+
+        image = prep(self.image.convert("RGBA"))
+
+        for index in self:
+            if self[index] is None:
+                r, g, b, a = image[index]
+                image[index] = r, g, b, 0
+
+        return(image)
+    
+    @property
+    def dimensions(self):
+        return(self.image.dimensions)
+
+    @property
+    def width(self):
+        return(self.dimensions[0])
+
+    @property
+    def height(self):
+        return(self.dimensions[1])
+
 def main(filenames):
     if not filenames:
         sys.stderr.write("Usage: {0} image1 [image2...]\n".format(sys.argv[0]))
         return(1)
 
     for filename in filenames:
-        result = read_captcha(filename)
-        sys.stdout.write("{0: >8s} <- {1}\n".format(result, filename))
+        captcha = Captcha(filename)        
+        sys.stdout.write("{0: >8s} <- {1}\n".format(captcha.value, filename))
     
     return(0)
 
