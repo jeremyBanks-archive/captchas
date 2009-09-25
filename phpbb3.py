@@ -123,12 +123,18 @@ class Captcha(object):
     def mask_crap_and_find_characters(self):
         """Masks all monocolored chunks in the image with an area less than MIN_CHUNK_AREA."""
 
+        character_chunks = []
+        
         for chunk in self.all_chunks():
             if len(chunk) < self.MIN_CHUNK_AREA:
                 for index in chunk:
                     self[index] = None
             else:
-                self.characters.append(self.chunk_image_mask(chunk))
+                character_chunks.append(chunk)
+
+        self.characters = map(self.chunk_image_mask,
+                              sorted(character_chunks,
+                                     key=lambda indicies: min(x for x, y in indicies)))
 
     def chunk_image_mask(self, chunk, ignore_color=False):
         """Returns a B&W image of the pixels in a chunk, cropped to fit.
@@ -234,30 +240,45 @@ class Captcha(object):
     def interpret_characters(self):
         """Attempts to return the string of characters represented by the character images."""
 
-        width = (sum(i.width for i in self.characters) +
-                 self.CHARACTER_PADDING * (len(self.characters) + 1))
-        height = (max(i.height for i in self.characters) +
-                  self.CHARACTER_PADDING * 2)
+        max_height = max(i.height for i in self.characters)
+
+        scaled_characters = []
+
+        for character in self.characters:
+            scaled_characters.append(Image.prep
+                                     (character
+                                      .convert("L")
+                                      .resize((int(character.width *
+                                                   max_height /
+                                                   character.height), max_height),
+                                              Image.BICUBIC).convert("1")))
+        
+        width = (sum(i.width for i in scaled_characters) +
+                 self.CHARACTER_PADDING * (len(scaled_characters) + 1))
+        height = max_height + self.CHARACTER_PADDING * 2
 
         image = Image.prep(Image.new("L", (width, height), 0))
 
         x_offset = self.CHARACTER_PADDING
         
-        for character in self.characters:
+        for character in scaled_characters:
             image.paste(character, (x_offset, self.CHARACTER_PADDING,
                                     x_offset + character.width,
                                     self.CHARACTER_PADDING + character.height))
             
             x_offset += character.width + self.CHARACTER_PADDING
 
-        image = Image.prep(image.filter(ImageFilter.MaxFilter(3)))
+        image = Image.prep(image
+                           .filter(ImageFilter.MaxFilter(3))
+                           .filter(ImageFilter.ModeFilter(3))
+                           )
         
         f = tempfile.NamedTemporaryFile(suffix=".ppm", delete=False)
-
+        
         image.save(f.name)
         
-        result = trim(subprocess.Popen(["ocrad", "-i", f.name],
-                                       stdout=subprocess.PIPE).communicate()[0])
+        result = subprocess.Popen(["ocrad", "-i", f.name],
+                                  stdout=subprocess.PIPE).communicate()[0].strip()
         
         return(result)
 
