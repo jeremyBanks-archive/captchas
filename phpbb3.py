@@ -15,6 +15,27 @@ import sys
 import tempfile
 import webbrowser
 
+def ocr(image):
+    with tempfile.NamedTemporaryFile(suffix=".ppm") as f:
+        image.save(f.name)
+        return(subprocess.Popen(["ocrad", "-i", f.name],
+                                stdout=subprocess.PIPE)
+               .communicate()[0]
+               .replace("0", "O")
+               .strip()
+               .upper())
+
+def ocr(image):
+    with tempfile.NamedTemporaryFile(suffix=".bmp") as f:
+        image.save(f.name)
+        subprocess.Popen(["tesseract", f.name, "/tmp/locr"],
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE).communicate()
+        return(open("/tmp/locr.txt").read()
+               .replace("0", "O")
+               .strip()
+               .upper())
+
 class Captcha(object):
     """Throw this an image file containing a CATCHPA and it'll put it's best guess in .value."""
     
@@ -239,7 +260,7 @@ class Captcha(object):
     
     def interpret_characters(self):
         """Attempts to return the string of characters represented by the character images."""
-
+        
         max_height = max(i.height for i in self.characters)
 
         scaled_characters = []
@@ -273,14 +294,7 @@ class Captcha(object):
                            .filter(ImageFilter.ModeFilter(3))
                            )
         
-        f = tempfile.NamedTemporaryFile(suffix=".ppm", delete=False)
-        
-        image.save(f.name)
-        
-        result = subprocess.Popen(["ocrad", "-i", f.name],
-                                  stdout=subprocess.PIPE).communicate()[0].strip()
-        
-        return(result)
+        return(ocr(image))
 
     @property
     def masked(self):
