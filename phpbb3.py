@@ -14,16 +14,9 @@ import subprocess
 import sys
 import tempfile
 import webbrowser
+import codecs
 
-def ocr(image):
-    with tempfile.NamedTemporaryFile(suffix=".ppm") as f:
-        image.save(f.name)
-        return(subprocess.Popen(["ocrad", "-i", f.name],
-                                stdout=subprocess.PIPE)
-               .communicate()[0]
-               .replace("0", "O")
-               .strip()
-               .upper())
+sys.stdout = codecs.getwriter("utf-8")(sys.stdout)
 
 def ocr(image):
     with tempfile.NamedTemporaryFile(suffix=".bmp") as f:
@@ -31,10 +24,12 @@ def ocr(image):
         subprocess.Popen(["tesseract", f.name, "/tmp/locr"],
                          stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE).communicate()
-        return(open("/tmp/locr.txt").read()
+        return(codecs.open("/tmp/locr.txt", "rt", "utf-8").read()
                .replace("0", "O")
                .strip()
                .upper())
+
+# TODO: Make code better. Break stuff up some more.
 
 class Captcha(object):
     """Throw this an image file containing a CATCHPA and it'll put it's best guess in .value."""
@@ -49,8 +44,8 @@ class Captcha(object):
         self.mask_crap_and_find_characters()
         
         self.align_characters()
-        
-        self.value = self.interpret_characters()
+        self.scale_characters()
+        self.interpret_characters() # Return and into self.value
 
     def mask_background(self):
         """Masks all pixels with the median pixel value in the image."""
@@ -245,7 +240,7 @@ class Captcha(object):
                 width = max_x - min_x + 1
                 height = max_y - min_y + 1
 
-                area = width * height
+                area = (width ** 1.2) * height
                 
                 if best_area is None or (area < best_area and width < height):
                     best_area = area
@@ -256,36 +251,53 @@ class Captcha(object):
 
         self.characters = new_characters
 
+    def scale_characters(self):
+        max_height = max(i.height for i in self.characters) # TODO: Should this be a constant?
+        max_width = max(i.width for i in self.characters) # :-/
+        
+        scaled_characters = []
+
+        for character in self.characters:
+            width = character.width * (max_height / character.height)
+            
+            if width > max_width:
+                width = max_width
+                height = int(character.height * (width / character.width))
+            else:
+                width = int(width)
+                height = max_height
+            
+            scaled_characters.append(Image.prep
+                                     (character
+                                      .convert("L")
+                                      .resize((width, height),
+                                              Image.BICUBIC).convert("1")))
+
+        self.characters = scaled_characters
+
     CHARACTER_PADDING = 16
     
     def interpret_characters(self):
         """Attempts to return the string of characters represented by the character images."""
-        
-        max_height = max(i.height for i in self.characters)
 
-        scaled_characters = []
-
-        for character in self.characters:
-            scaled_characters.append(Image.prep
-                                     (character
-                                      .convert("L")
-                                      .resize((int(character.width *
-                                                   max_height /
-                                                   character.height), max_height),
-                                              Image.BICUBIC).convert("1")))
+        max_height = max(i.height for i in self.characters) # TODO: Should this be a constant?
         
-        width = (sum(i.width for i in scaled_characters) +
-                 self.CHARACTER_PADDING * (len(scaled_characters) + 1))
+        # We put the characters in an image, each CHARACTER_PADDING from the bottom.
+        
+        width = (sum(i.width for i in self.characters) +
+                 self.CHARACTER_PADDING * (len(self.characters) + 1))
         height = max_height + self.CHARACTER_PADDING * 2
 
         image = Image.prep(Image.new("L", (width, height), 0))
 
         x_offset = self.CHARACTER_PADDING
         
-        for character in scaled_characters:
-            image.paste(character, (x_offset, self.CHARACTER_PADDING,
+        for character in self.characters:
+            y_offset = height - self.CHARACTER_PADDING - character.height
+            
+            image.paste(character, (x_offset, y_offset,
                                     x_offset + character.width,
-                                    self.CHARACTER_PADDING + character.height))
+                                    y_offset + character.height))
             
             x_offset += character.width + self.CHARACTER_PADDING
 
@@ -293,8 +305,9 @@ class Captcha(object):
                            .filter(ImageFilter.MaxFilter(3))
                            .filter(ImageFilter.ModeFilter(3))
                            )
-        
-        return(ocr(image))
+
+        self.value = ocr(image)
+        return(self.value)
 
     @property
     def masked(self):
@@ -380,10 +393,23 @@ def main(filenames):
         sys.stderr.write("Usage: {0} image1 [image2...]\n".format(sys.argv[0]))
         return(1)
 
+    hits = 0
+    total = 0
+    
     for filename in filenames:
+        correct = filename.rpartition("/")[2].partition(".")[0]
         captcha = Captcha(filename)
+
+        hit = correct == captcha.value
+
+        if hit:
+            hits += 1
+        total += 1
         
-        sys.stdout.write("{0: >8s} <- {1}\n".format(captcha.value, filename))
+        sys.stdout.write("{2} {0: >8s} <- {1}\n".format(captcha.value, filename, "+" if hit else "-"))
+
+    print("\n{0} hits out of {1} attempts ({2:.1f}%)"
+          .format(hits, total, hits / total * 100))
     
     return(0)
 
