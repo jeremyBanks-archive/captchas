@@ -1,4 +1,5 @@
 #!/usr/bin/env python2.6
+# coding: utf-8
 from __future__ import unicode_literals, print_function, absolute_import, division
 
 from copy import *
@@ -134,7 +135,7 @@ class Captcha(object):
 
                 yield(chunk)
     
-    MIN_CHUNK_AREA = 128
+    MIN_CHUNK_AREA = 160
 
     def mask_crap_and_find_characters(self):
         """Masks all monocolored chunks in the image with an area less than MIN_CHUNK_AREA."""
@@ -399,14 +400,29 @@ def main(filenames):
     for filename in filenames:
         correct = filename.rpartition("/")[2].partition(".")[0]
         captcha = Captcha(filename)
-
+        
         hit = correct == captcha.value
 
         if hit:
             hits += 1
         total += 1
-        
-        sys.stdout.write("{2} {0: >8s} <- {1}\n".format(captcha.value, filename, "+" if hit else "-"))
+
+        if hit:
+            status = "✓" # a hit
+        else:
+            length_delta = len(captcha.value) - len(correct)
+
+            if length_delta:
+                captcha.masked.save("fail-" + correct + ".png")
+            
+            if length_delta > 0:
+                status = ">" # too long
+            elif length_delta < 0:
+                status = "<" # too short
+            else:
+                status = "✗" # right length, but wrong
+            
+        sys.stdout.write("{2} {0: >8s} <- {1}\n".format(captcha.value, filename, status))
 
     print("\n{0} hits out of {1} attempts ({2:.1f}%)"
           .format(hits, total, hits / total * 100))
