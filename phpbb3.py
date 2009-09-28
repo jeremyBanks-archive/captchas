@@ -24,7 +24,9 @@ def ocr(image):
         image.save(f.name)
         subprocess.Popen(["tesseract", f.name, "/tmp/locr"],
                          stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE).communicate()
+                         stderr=subprocess.PIPE,
+                         env={"TESSDATA_PREFIX": "./"} # To use local stripped-down config
+                         ).communicate()
         return(codecs.open("/tmp/locr.txt", "rt", "utf-8").read()
                .replace("0", "O")
                .strip()
