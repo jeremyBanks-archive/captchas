@@ -54,18 +54,30 @@ class Captcha(object):
     .characters is the list of images of each segmented character.
     .value is the OCR'ed result of the text."""
     
-    def __init__(captcha, file_):
+    def __init__(captcha, file_, process=True):
         captcha.image = Image.prep(Image.open(file_).convert("RGB"))
         captcha.mask = Image.prep(Image.new("1", captcha.dimensions, False))
-        captcha.characters = [] # filled in mask_crap_and_find_characters
+        captcha.characters = []
+        captcha.value = None
+
+        if process:
+            captcha.process()
         
-        captcha.mask_background()
-        captcha.mask_horizontal_lines()        
-        captcha.mask_crap_and_find_characters()
+    def process(captcha):
+        """Process a captcha and return its value.
+
+        Includes the masking, scaling, recognizing and all that."""
+
+        captcha.mask_background() # .mask
+        captcha.mask_horizontal_lines() # .mask      
+        captcha.mask_crap_and_find_characters() # .mask, .characters
         
-        captcha.align_characters()
-        captcha.scale_characters()
-        captcha.interpret_characters() # Return and into captcha.value
+        captcha.align_characters() # .characters
+        captcha.scale_characters() # .characters
+
+        captcha.value = captcha.interpret_characters() # .characters
+
+        return(captcha.value)
 
     def mask_background(captcha):
         """Masks all pixels with the median pixel value in the image."""
@@ -326,8 +338,7 @@ class Captcha(object):
                            .filter(ImageFilter.ModeFilter(3))
                            )
 
-        captcha.value = ocr(image)
-        return(captcha.value)
+        return(ocr(image))
 
     @property
     def masked(captcha):
