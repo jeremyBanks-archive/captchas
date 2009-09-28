@@ -17,7 +17,13 @@ import tempfile
 import webbrowser
 import codecs
 
+# Some OCRs were giving me some unicode. It won't be in a valid
+# response but for debugging I thought I ought to support it.
 sys.stdout = codecs.getwriter("utf-8")(sys.stdout)
+
+# You can replace this function with any taking an image object
+# and returning an attempt to determine it's string value.
+# Plug in whatever OCR backend you want.
 
 TMP_OCR_NAME = "/tmp/captess_ocr" + str(int(random.random() * 200))
 
@@ -37,72 +43,81 @@ def ocr(image):
 # TODO: Make code better. Break stuff up some more.
 
 class Captcha(object):
-    """Throw this an image file containing a CATCHPA and it'll put it's best guess in .value."""
-    
-    def __init__(self, file_):
-        self.image = Image.prep(Image.open(file_).convert("RGB"))
-        self.mask = Image.prep(Image.new("1", self.dimensions, False))
-        self.characters = [] # filled in mask_crap_and_find_characters
-        
-        self.mask_background()
-        self.mask_horizontal_lines()        
-        self.mask_crap_and_find_characters()
-        
-        self.align_characters()
-        self.scale_characters()
-        self.interpret_characters() # Return and into self.value
+    """Throw this an image file containing a CATCHPA and it'll put it's best guess in .value.
 
-    def mask_background(self):
+    Item access as captcha[x, y] can be used to get/set a mask
+    or set a pixel in the image.
+
+    .masked returns the image with the mask applied.
+    .image is the original (unmasked) image.
+    .mask is the B&W mask.
+    .characters is the list of images of each segmented character.
+    .value is the OCR'ed result of the text."""
+    
+    def __init__(captcha, file_):
+        captcha.image = Image.prep(Image.open(file_).convert("RGB"))
+        captcha.mask = Image.prep(Image.new("1", captcha.dimensions, False))
+        captcha.characters = [] # filled in mask_crap_and_find_characters
+        
+        captcha.mask_background()
+        captcha.mask_horizontal_lines()        
+        captcha.mask_crap_and_find_characters()
+        
+        captcha.align_characters()
+        captcha.scale_characters()
+        captcha.interpret_characters() # Return and into captcha.value
+
+    def mask_background(captcha):
         """Masks all pixels with the median pixel value in the image."""
 
-        background = tuple(ImageStat.Stat(self.image).median)
+        background = tuple(ImageStat.Stat(captcha.image).median)
         
-        for index in self:
+        for index in captcha:
             
-            if self[index] == background:
-                self[index] = None
+            if captcha[index] == background:
+                captcha[index] = None
 
     MIN_LINE_LENGTH = 8
     
-    def mask_horizontal_lines(self):
+    def mask_horizontal_lines(captcha):
         """Masks monocolored horizontal lines at least MIN_LINE_LENGTH in length in the image.
 
         Lines to be masked must have masked pixels or edges above and below them."""
 
         horizontal_lines = list()
 
-        for y in range(self.height):
+        for y in range(captcha.height):
             start = None
 
-            for x in range(self.width):
-                if (self[x, y] is not None and
-                    self[x, y - 1] is None and
-                    self[x, y + 1] is None):
+            for x in range(captcha.width):
+                if (captcha[x, y] is not None and
+                    captcha[x, y - 1] is None and
+                    captcha[x, y + 1] is None):
 
                     if start is None:
                         start = end = x
-                        color = self[x, y]
+                        color = captcha[x, y]
                     else:
-                        if end == x - 1 and color == self[x, y]:
+                        if end == x - 1 and color == captcha[x, y]:
                             end = x
                         else:
-                            if end - start + 1 >= self.MIN_LINE_LENGTH:
+                            if end - start + 1 >= captcha.MIN_LINE_LENGTH:
                                 horizontal_lines.append((y, start, end))
                             start = None
 
-                if start and end - start + 1 >= self.MIN_LINE_LENGTH:
+                if start and end - start + 1 >= captcha.MIN_LINE_LENGTH:
                     horizontal_lines.append((y, start, end))
 
         for y_start_end in horizontal_lines:
             y, start, end = y_start_end
 
             for x in range(start, end + 1):
-                self[x, y] = None
+                captcha[x, y] = None
 
-    def chunk(self, start, ignore_color=False):
+    def chunk(captcha, start, ignore_color=False):
         """Returns a set of indicies of an unmasked chunk."""
 
-        original = self[start]
+        original = captcha[start]
         
         if original is None:
             return(set())
@@ -119,21 +134,21 @@ class Captcha(object):
                         next = (index[0] + d_x, index[1] + d_y)
                         
                         if (next not in indicies and
-                            ((ignore_color and self[next] is not None) or
-                             self[next] == original)):
+                            ((ignore_color and captcha[next] is not None) or
+                             captcha[next] == original)):
                             indicies.add(next)
                             unchecked.add(next)
         
         return(indicies)
 
-    def all_chunks(self, ignore_color=False):
+    def all_chunks(captcha, ignore_color=False):
         """Returns an iterable of the index sets of all chunks in the image."""
         
         exclusion = set() # previously-chunked cells
         
-        for index in self:
-            if self[index] is not None and index not in exclusion:
-                chunk = self.chunk(index, ignore_color)
+        for index in captcha:
+            if captcha[index] is not None and index not in exclusion:
+                chunk = captcha.chunk(index, ignore_color)
                 
                 exclusion.update(chunk)
 
@@ -141,23 +156,23 @@ class Captcha(object):
     
     MIN_CHUNK_AREA = 160
 
-    def mask_crap_and_find_characters(self):
+    def mask_crap_and_find_characters(captcha):
         """Masks all monocolored chunks in the image with an area less than MIN_CHUNK_AREA."""
 
         character_chunks = []
         
-        for chunk in self.all_chunks():
-            if len(chunk) < self.MIN_CHUNK_AREA:
+        for chunk in captcha.all_chunks():
+            if len(chunk) < captcha.MIN_CHUNK_AREA:
                 for index in chunk:
-                    self[index] = None
+                    captcha[index] = None
             else:
                 character_chunks.append(chunk)
 
-        self.characters = map(self.chunk_image_mask,
+        captcha.characters = map(captcha.chunk_image_mask,
                               sorted(character_chunks,
                                      key=lambda indicies: min(x for x, y in indicies)))
 
-    def chunk_image_mask(self, chunk, ignore_color=False):
+    def chunk_image_mask(captcha, chunk, ignore_color=False):
         """Returns a B&W image of the pixels in a chunk, cropped to fit.
 
         The pixels that fit into the crop but are not in the chunk are
@@ -192,7 +207,7 @@ class Captcha(object):
     MIN_ROTATION = -120
     MAX_ROTATION = +120
     
-    def align_characters(self):
+    def align_characters(captcha):
         """Rotates character images to the correct alignment.
 
         This is determined by finding the orientation within MAX_ROTATION
@@ -201,11 +216,11 @@ class Captcha(object):
 
         new_characters = []
         
-        for character in self.characters:
+        for character in captcha.characters:
             best_width = None
             best_area = None
             
-            for angle in range(self.MIN_ROTATION, self.MAX_ROTATION + 1):
+            for angle in range(captcha.MIN_ROTATION, captcha.MAX_ROTATION + 1):
                 rotated = Image.prep(character.rotate(angle, Image.NEAREST,
                                                       expand=True))
 
@@ -254,15 +269,15 @@ class Captcha(object):
 
             new_characters.append(Image.prep(best_image.crop(best_box)))
 
-        self.characters = new_characters
+        captcha.characters = new_characters
 
-    def scale_characters(self):
-        max_height = max(i.height for i in self.characters) # TODO: Should this be a constant?
-        max_width = max(i.width for i in self.characters) # :-/
+    def scale_characters(captcha):
+        max_height = max(i.height for i in captcha.characters) # TODO: Should this be a constant?
+        max_width = max(i.width for i in captcha.characters) # :-/
         
         scaled_characters = []
 
-        for character in self.characters:
+        for character in captcha.characters:
             width = character.width * (max_height / character.height)
             
             if width > max_width:
@@ -278,96 +293,96 @@ class Captcha(object):
                                       .resize((width, height),
                                               Image.BICUBIC).convert("1")))
 
-        self.characters = scaled_characters
+        captcha.characters = scaled_characters
 
     CHARACTER_PADDING = 16
     
-    def interpret_characters(self):
+    def interpret_characters(captcha):
         """Attempts to return the string of characters represented by the character images."""
 
-        max_height = max(i.height for i in self.characters) # TODO: Should this be a constant?
+        max_height = max(i.height for i in captcha.characters) # TODO: Should this be a constant?
         
         # We put the characters in an image, each CHARACTER_PADDING from the bottom.
         
-        width = (sum(i.width for i in self.characters) +
-                 self.CHARACTER_PADDING * (len(self.characters) + 1))
-        height = max_height + self.CHARACTER_PADDING * 2
+        width = (sum(i.width for i in captcha.characters) +
+                 captcha.CHARACTER_PADDING * (len(captcha.characters) + 1))
+        height = max_height + captcha.CHARACTER_PADDING * 2
 
         image = Image.prep(Image.new("L", (width, height), 0))
 
-        x_offset = self.CHARACTER_PADDING
+        x_offset = captcha.CHARACTER_PADDING
         
-        for character in self.characters:
-            y_offset = height - self.CHARACTER_PADDING - character.height
+        for character in captcha.characters:
+            y_offset = height - captcha.CHARACTER_PADDING - character.height
             
             image.paste(character, (x_offset, y_offset,
                                     x_offset + character.width,
                                     y_offset + character.height))
             
-            x_offset += character.width + self.CHARACTER_PADDING
+            x_offset += character.width + captcha.CHARACTER_PADDING
 
         image = Image.prep(image
                            .filter(ImageFilter.MaxFilter(3))
                            .filter(ImageFilter.ModeFilter(3))
                            )
 
-        self.value = ocr(image)
-        return(self.value)
+        captcha.value = ocr(image)
+        return(captcha.value)
 
     @property
-    def masked(self):
+    def masked(captcha):
         """Returns an RGBA image based on original with masked areas transparent.
 
         They keep their original color values, their alpha is just zeroed."""
 
-        image = Image.prep(self.image.convert("RGBA"))
+        image = Image.prep(captcha.image.convert("RGBA"))
 
-        for index in self:
-            if self[index] is None:
+        for index in captcha:
+            if captcha[index] is None:
                 r, g, b, a = image.data[index]
                 image.data[index] = r, g, b, False
 
         return(image)
     
-    def __getitem__(self, x_y):
+    def __getitem__(captcha, x_y):
         """Returns the value (or None if masked or out of bounds) of a pixel in the image."""
         
         x, y = x_y
         
-        if 0 <= x < self.width and 0 <= y < self.height and self.mask.data[x, y] == False:
-            return(self.image.data[x, y])
+        if 0 <= x < captcha.width and 0 <= y < captcha.height and captcha.mask.data[x, y] == False:
+            return(captcha.image.data[x, y])
         else:
             return(None)
 
-    def __setitem__(self, x_y, value):
+    def __setitem__(captcha, x_y, value):
         """Sets the value (or mask if None) of a pixel in the image."""
         
         x, y = x_y
 
         if value is None:
-            self.mask.data[x, y] = True
+            captcha.mask.data[x, y] = True
         else:
-            self.mask.data[x, y] = False
-            self.image.data[x, y] = value
+            captcha.mask.data[x, y] = False
+            captcha.image.data[x, y] = value
 
-    def __iter__(self):
+    def __iter__(captcha):
         """Iterates the coords of each pixels in the image."""
         
-        for y in range(self.height):
-            for x in range(self.width):
+        for y in range(captcha.height):
+            for x in range(captcha.width):
                 yield(x, y)
 
     @property
-    def dimensions(self):
-        return(self.image.size)
+    def dimensions(captcha):
+        return(captcha.image.size)
 
     @property
-    def width(self):
-        return(self.dimensions[0])
+    def width(captcha):
+        return(captcha.dimensions[0])
 
     @property
-    def height(self):
-        return(self.dimensions[1])
+    def height(captcha):
+        return(captcha.dimensions[1])
 
 def __Image_show(image):
     """Saves an image to a temporary file and opens it in a web browser."""
