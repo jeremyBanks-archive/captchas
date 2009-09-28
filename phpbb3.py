@@ -19,15 +19,17 @@ import codecs
 
 sys.stdout = codecs.getwriter("utf-8")(sys.stdout)
 
+TMP_OCR_NAME = "/tmp/captess_ocr" + str(int(random.random() * 200))
+
 def ocr(image):
     with tempfile.NamedTemporaryFile(suffix=".bmp") as f:
         image.save(f.name)
-        subprocess.Popen(["tesseract", f.name, "/tmp/locr"],
+        subprocess.Popen(["tesseract", f.name, TMP_OCR_NAME],
                          stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE,
-                         env={"TESSDATA_PREFIX": "./"} # To use local stripped-down config
+                         env={"TESSDATA_PREFIX": "./phpbb3/"} # To use local stripped-down config
                          ).communicate()
-        return(codecs.open("/tmp/locr.txt", "rt", "utf-8").read()
+        return(codecs.open(TMP_OCR_NAME + ".txt", "rt", "utf-8").read()
                .replace("0", "O")
                .strip()
                .upper())
